@@ -1,0 +1,433 @@
+// Command Centre — Prisma schema (Phase 1 draft)
+// Portable on purpose: no enums, Json, arrays or native @db types, so the same
+// models work on PostgreSQL (Compose / server) and SQLite (local dev).
+// `provider` is swapped by scripts/set-db-provider.mjs from DATABASE_PROVIDER.
+// Conventions
+//  - Enum-like columns are Strings, validated by Zod in the API (values in comments).
+//  - Date-only fields (dueDate etc.) are stored at 00:00 UTC and treated as calendar dates.
+//  - createdById / updatedById are plain ids (no FK) so history survives user changes.
+//  - archivedAt = soft delete. ActivityLog, Session and Notification are append-only/ephemeral.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ───────── Identity & access ─────────
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  isAdmin      Boolean   @default(false) // Admin = every company, all management routes
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdById  String?
+  updatedById  String?
+  archivedAt   DateTime?
+
+  sessions      Session[]
+  memberships   CompanyMembership[]
+  settings      UserSettings?
+  ownedTasks    Task[]              @relation("TaskOwner")
+  ownedProjects Project[]           @relation("ProjectOwner")
+  focusSessions FocusSession[]
+  notifications Notification[]
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  userId     String
+  tokenHash  String   @unique // SHA-256 of the opaque cookie token
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model CompanyMembership {
+  id          String    @id @default(uuid())
+  userId      String
+  companyId   String
+  role        String // MANAGER | USER | VIEWER
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+  user        User      @relation(fields: [userId], references: [id])
+  company     Company   @relation(fields: [companyId], references: [id])
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+// ───────── Masters ─────────
+
+model Company {
+  id          String    @id @default(uuid())
+  name        String
+  shortName   String?
+  code        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  contact     String?
+  notes       String?
+  isDemo      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+
+  memberships CompanyMembership[]
+  projects    Project[]
+  people      Person[]
+  tasks       Task[]
+}
+
+model Project {
+  id          String    @id @default(uuid())
+  companyId   String
+  name        String
+  description String?
+  ownerId     String?
+  startDate   DateTime?
+  targetDate  DateTime?
+  priority    Int       @default(3) // 1 Critical .. 4 Low
+  status      String    @default("ACTIVE") // NOT_STARTED | ACTIVE | ON_HOLD | COMPLETED | CANCELLED
+  isDemo      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+  owner   User?   @relation("ProjectOwner", fields: [ownerId], references: [id])
+  tasks   Task[]
+
+  @@unique([companyId, name])
+  @@index([companyId, status])
+}
+
+// People are delegation targets / contacts. A Person is not a login (that is User).
+model Person {
+  id          String    @id @default(uuid())
+  companyId   String? // null = shared across companies (the prototype's people are global)
+  name        String
+  designation String?
+  department  String?
+  email       String?
+  phone       String?
+  reportsToId String?
+  active      Boolean   @default(true)
+  notes       String?
+  isDemo      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+
+  company     Company?  @relation(fields: [companyId], references: [id])
+  reportsTo   Person?   @relation("ReportsTo", fields: [reportsToId], references: [id])
+  reports     Person[]  @relation("ReportsTo")
+  delegated   Task[]    @relation("TaskDelegatedTo")
+  reviewing   Task[]    @relation("TaskReviewer")
+  subtasks    Subtask[]
+  followups   Followup[]
+
+  @@index([companyId])
+  @@index([name])
+}
+
+// ───────── Work ─────────
+
+model Task {
+  id                     String    @id @default(uuid())
+  companyId              String
+  projectId              String?
+  title                  String
+  description            String?
+  additionalDetails      String?
+  ownerId                String
+  delegatedToId          String?
+  delegatedAt            DateTime?
+  delegationInstructions String?
+  reviewerId             String?
+  priority               Int       @default(3) // 1 Critical, 2 High, 3 Medium, 4 Low
+  status                 String    @default("TODO") // TODO | DOING | WAITING | DELEGATED | DONE
+  progressOverride       Int? // null = derived from subtasks
+  dueDate                DateTime?
+  waitingFor             String?
+  waitingExpectedDate    DateTime?
+  nextAction             String?
+  nextFollowupDate       DateTime? // prototype `fu`; full history lives in Followup (Phase 3)
+  postponeCount          Int       @default(0)
+  lastActivityAt         DateTime  @default(now())
+  remindDaysBefore       Int?
+  dependsOnId            String? // prototype `dep`: blocked until that task is DONE
+  recurringRuleId        String?
+  nextOccurrenceCreated  Boolean   @default(false)
+  focusMinutes           Int       @default(0)
+  completedAt            DateTime?
+  completedById          String?
+  completionNote         String?
+  isDemo                 Boolean   @default(false)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdById            String?
+  updatedById            String?
+  archivedAt             DateTime?
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  project       Project?       @relation(fields: [projectId], references: [id])
+  owner         User           @relation("TaskOwner", fields: [ownerId], references: [id])
+  delegatedTo   Person?        @relation("TaskDelegatedTo", fields: [delegatedToId], references: [id])
+  reviewer      Person?        @relation("TaskReviewer", fields: [reviewerId], references: [id])
+  dependsOn     Task?          @relation("TaskDependency", fields: [dependsOnId], references: [id])
+  blocking      Task[]         @relation("TaskDependency")
+  recurringRule RecurringRule? @relation(fields: [recurringRuleId], references: [id])
+  subtasks      Subtask[]
+  followups     Followup[]
+  reminders     Reminder[]
+  attachments   Attachment[]
+  focusSessions FocusSession[]
+  relationsFrom TaskRelationship[] @relation("RelFrom")
+  relationsTo   TaskRelationship[] @relation("RelTo")
+
+  @@index([status, dueDate])
+  @@index([delegatedToId])
+  @@index([projectId])
+  @@index([lastActivityAt])
+  @@index([companyId, archivedAt])
+  @@index([nextFollowupDate])
+}
+
+model Subtask {
+  id            String    @id @default(uuid())
+  taskId        String
+  companyId     String // denormalised for authorization checks
+  title         String
+  description   String?
+  assigneeId    String?
+  dueDate       DateTime?
+  priority      Int       @default(3)
+  progress      Int       @default(0)
+  status        String    @default("TODO") // TODO | DOING | DONE
+  position      Int       @default(0)
+  reminderAt    DateTime?
+  focusMinutes  Int       @default(0)
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
+  updatedById   String?
+  archivedAt    DateTime?
+
+  task     Task    @relation(fields: [taskId], references: [id])
+  assignee Person? @relation(fields: [assigneeId], references: [id])
+
+  @@index([taskId, position])
+  @@index([companyId])
+}
+
+// Append-only. Never edited or overwritten; archivedAt exists only for restore tooling.
+model Comment {
+  id          String    @id @default(uuid())
+  companyId   String // denormalised so every comment can be authorised
+  entityType  String // COMPANY | PROJECT | TASK | SUBTASK
+  entityId    String
+  body        String
+  authorId    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+
+  @@index([entityType, entityId, createdAt])
+  @@index([companyId])
+}
+
+// ───────── Accountability (tables created now, behaviour arrives in Phase 3) ─────────
+
+model Followup {
+  id          String    @id @default(uuid())
+  taskId      String
+  companyId   String
+  personId    String?
+  type        String // PHONE | WHATSAPP | EMAIL | MEETING | PERSONAL | DOCUMENT_PENDING | PAYMENT_PENDING | APPROVAL_PENDING | OTHER
+  dueAt       DateTime
+  doneAt      DateTime?
+  notes       String? // what happened
+  result      String?
+  nextDate    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+  task        Task      @relation(fields: [taskId], references: [id])
+  person      Person?   @relation(fields: [personId], references: [id])
+
+  @@index([taskId])
+  @@index([companyId, dueAt])
+}
+
+model Reminder {
+  id          String    @id @default(uuid())
+  taskId      String
+  companyId   String
+  userId      String
+  kind        String // DUE_BEFORE | CUSTOM | FOLLOWUP | NO_UPDATE | DELEGATION | ESCALATION
+  remindAt    DateTime
+  sentAt      DateTime?
+  recurrence  String? // DAILY | WEEKLY | MONTHLY
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+  task        Task      @relation(fields: [taskId], references: [id])
+
+  @@index([active, remindAt])
+}
+
+model Attachment {
+  id           String    @id @default(uuid())
+  taskId       String
+  companyId    String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String // key behind the storage interface (local disk now, S3 later)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdById  String?
+  updatedById  String?
+  archivedAt   DateTime?
+  task         Task      @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+}
+
+model TaskRelationship {
+  id          String    @id @default(uuid())
+  companyId   String
+  fromTaskId  String
+  toTaskId    String
+  type        String // PARENT | RELATED | BLOCKS
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+  from        Task      @relation("RelFrom", fields: [fromTaskId], references: [id])
+  to          Task      @relation("RelTo", fields: [toTaskId], references: [id])
+
+  @@unique([fromTaskId, toTaskId, type])
+  @@index([toTaskId])
+}
+
+model RecurringRule {
+  id            String    @id @default(uuid())
+  companyId     String
+  frequency     String // DAILY | WEEKLY | MONTHLY | QUARTERLY | YEARLY | CUSTOM
+  intervalCount Int       @default(1)
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
+  updatedById   String?
+  archivedAt    DateTime?
+  tasks         Task[]
+}
+
+// Append-only audit trail. `auto = true` marks automation-written entries (explainable, overridable).
+model ActivityLog {
+  id         String   @id @default(uuid())
+  companyId  String?
+  entityType String
+  entityId   String
+  action     String
+  detail     String?
+  auto       Boolean  @default(false)
+  userId     String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+model FocusSession {
+  id             String    @id @default(uuid())
+  userId         String
+  taskId         String
+  companyId      String
+  startedAt      DateTime
+  endedAt        DateTime?
+  plannedMinutes Int
+  actualMinutes  Int       @default(0)
+  completed      Boolean   @default(false) // false = interrupted
+  sessionNumber  Int       @default(1)
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String?
+  updatedById    String?
+  archivedAt     DateTime?
+  user           User      @relation(fields: [userId], references: [id])
+  task           Task      @relation(fields: [taskId], references: [id])
+
+  @@index([userId, startedAt])
+  @@index([taskId])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  companyId String?
+  taskId    String?
+  kind      String
+  title     String
+  body      String?
+  groupKey  String? // for "8 items require your attention today"
+  channel   String    @default("IN_APP") // IN_APP | BROWSER | EMAIL
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, readAt])
+}
+
+// Thresholds mirror the prototype's `set` object (f, s, l, n, stale, soon, esc, nt).
+model UserSettings {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  focusMinutes       Int      @default(25)
+  shortBreakMinutes  Int      @default(5)
+  longBreakMinutes   Int      @default(15)
+  sessionsBeforeLong Int      @default(4)
+  staleDays          Int      @default(3)
+  dueSoonDays        Int      @default(3)
+  escalateDays       Int      @default(3)
+  notifyMode         String   @default("DAILY") // IMMEDIATE | DAILY | WEEKLY | OFF
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id])
+}

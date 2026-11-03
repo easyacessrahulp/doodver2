@@ -1,0 +1,29 @@
+{
+  "name": "@cc/api",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --experimental-strip-types --no-warnings --watch src/server.ts",
+    "start": "node --experimental-strip-types --no-warnings src/server.ts",
+    "update-db": "node --experimental-strip-types --no-warnings src/updateDbCli.ts",
+    "seed": "node --experimental-strip-types --no-warnings src/seedCli.ts",
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
+    "perf": "node --experimental-strip-types --no-warnings scripts/perf.ts",
+    "import": "node --experimental-strip-types --no-warnings src/importCli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/static": "^10.1.5",
+    "argon2": "^0.45.1",
+    "docx": "^9.12.0",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.12.5",
+    "jszip": "^3.10.2",
+    "pdfkit": "^0.20.2",
+    "zod": "^4.6.5"
+  }
+}
