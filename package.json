@@ -1,0 +1,23 @@
+{
+  "name": "command-centre",
+  "private": true,
+  "version": "0.8.3",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/web",
+    "start": "npm run start -w apps/api",
+    "test": "npm test -w apps/api",
+    "update-db": "npm run update-db -w apps/api",
+    "seed": "npm run seed -w apps/api"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  }
+}

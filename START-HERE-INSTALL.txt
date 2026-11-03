@@ -1,0 +1,35 @@
+DOOD version 8 - fresh install (empty database)
+================================================
+
+This package has NO data in it. DOOD creates a brand-new, empty database the first
+time it starts. You add your companies, people and tasks after it is running.
+
+A) ON A WINDOWS COMPUTER OR WINDOWS SERVER
+ 1. Install Node.js 22.13 or newer (LTS) from https://nodejs.org  (all default options).
+    Restart the computer.
+ 2. Unzip this folder, for example to C:\DOOD
+ 3. Double-click  Install-DOOD-Server.bat   (a few minutes; needs internet once).
+ 4. Double-click  Start-DOOD-LAN.bat   and keep the black window open.
+ 5. Open the address shown in the window. The first screen asks you to create the
+    ADMIN account - choose a strong password (10+ characters) and write it down.
+ 6. Optional AI: double-click  Set-AI-Key.bat  and paste your OpenAI key. Restart DOOD.
+ 7. Team members open the same address in their browsers.
+    If they cannot connect, run  Allow-DOOD-Firewall.bat  once (right-click, Run as administrator).
+
+B) ON AN ONLINE SERVER (cloud / VPS) WITH DOCKER
+ 1. Copy this folder to the server.  Optional AI: create a file named .env containing
+        OPENAI_API_KEY=your-key
+ 2. Run:   docker compose up -d --build
+ 3. Open  http://SERVER-ADDRESS:3000  and create the ADMIN account.
+ 4. For phone install and alerts put it behind https (a reverse proxy such as Caddy or
+    Nginx with a certificate), then set SECURE_COOKIES to "true" in docker-compose.yml
+    and run:  docker compose up -d
+ Your data lives in the Docker volume "data" - back it up (Settings > Backup inside DOOD
+ also makes backups).
+
+AFTER YOU ADD YOUR DATA
+ - Settings > Backup: make a backup regularly and keep a copy off the server.
+ - To update to a future version: close DOOD, keep your data folder (apps\api\data on
+   Windows) and your .env file, copy the new files over, run Update-DOOD-Database.bat.
+
+Open DOOD-Training-Manual.pdf for a step-by-step guide with pictures.

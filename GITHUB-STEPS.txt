@@ -1,0 +1,14 @@
+PUT DOOD ON GITHUB (version 8.3, full source, no data, no keys)
+
+1. On github.com click + (top right) > New repository. Name it  dood . Choose Private. Click Create repository.
+2. On the new page click "uploading an existing file".
+3. Unzip this package on your PC. Open the folder  dood . Select EVERYTHING inside it
+   (Ctrl+A) and drag it into the GitHub page. Wait until all files are listed.
+   (Folders such as .github, apps and docs go up together with their files.)
+4. In "Commit changes" type:  DOOD 8.3 full source  and click Commit changes.
+   If GitHub says too many files, upload in two or three batches (apps first, then the rest).
+5. Click the Actions tab. A run called "Build and test DOOD" starts by itself. A green tick means
+   the whole project builds and its 97 checks pass. (If you see a red cross, send me a screenshot.)
+
+NEVER upload: your .env file, the apps/api/data folder, or any .db file. They are not in this package.
+Your OpenAI key stays only on your own computer or server.

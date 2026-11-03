@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports: ["3000:3000"]
+    environment:
+      SECURE_COOKIES: "false"   # set to "true" behind HTTPS
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"   # optional: put it in a file named .env next to this one
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o-mini}"
+    volumes:
+      - data:/data
+    restart: unless-stopped
+volumes:
+  data:
